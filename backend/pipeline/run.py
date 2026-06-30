@@ -12,6 +12,7 @@ from typing import List, Optional
 from ..config import Config, config
 from ..db import get_connection, init_db
 from .chunk_embed import embed_run
+from .coverage import score_coverage
 from .discover import discover_urls
 from .extract import extract_page
 from .fetch import fetch_all
@@ -153,6 +154,11 @@ def run_pipeline(
         n_topics, n_cats = discover_topics(run_id, cfg=cfg)
         print(f"  discovered {n_topics} topics in {n_cats} categories")
         set_run_status(run_id, "topiced", cfg=cfg)
+
+        # M4 — coverage strength, share, and state per topic.
+        n_scored = score_coverage(run_id, cfg=cfg)
+        print(f"  scored coverage for {n_scored} topics")
+        set_run_status(run_id, "done", cfg=cfg)
     except Exception:
         set_run_status(run_id, "error", cfg=cfg)
         raise
