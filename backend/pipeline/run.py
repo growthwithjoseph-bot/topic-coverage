@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from ..config import Config, config
 from ..db import get_connection, init_db
+from .chunk_embed import embed_run
 from .discover import discover_urls
 from .extract import extract_page
 from .fetch import fetch_all
@@ -141,6 +142,11 @@ def run_pipeline(
             n = crawl_domain(d["id"], d["domain"], lang, max_pages=cap, cfg=cfg)
             print(f"  [{d['domain']}] stored {n} pages")
         set_run_status(run_id, "crawled", cfg=cfg)
+
+        # M2 — chunk + embed every page across all domains.
+        n_chunks = embed_run(run_id, cfg=cfg)
+        print(f"  embedded {n_chunks} chunks")
+        set_run_status(run_id, "embedded", cfg=cfg)
     except Exception:
         set_run_status(run_id, "error", cfg=cfg)
         raise
