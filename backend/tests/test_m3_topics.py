@@ -10,8 +10,15 @@ from backend.pipeline import topics
 from backend.pipeline.run import create_run, get_domains
 
 
-def test_terms_to_label_dedupes_and_titles():
-    assert topics._terms_to_label(["gantt", "gantt", "chart"]) == "Gantt · Chart"
+def test_terms_to_label_normalises_readably():
+    # dedupes overlapping words and prefers the multi-word phrase
+    assert topics._terms_to_label(["vs", "vs code", "code", "environment"]) == "VS Code Environment"
+    # acronyms uppercased, plurals deduped
+    assert topics._terms_to_label(["llms", "customer", "llm"]) == "LLMs Customer"
+    assert topics._terms_to_label(["api", "public api", "webhooks"]) == "Public API Webhooks"
+    # no '·' soup, Title-Cased
+    label = topics._terms_to_label(["insurance", "health", "benefits", "health insurance"])
+    assert "·" not in label and label[0].isupper()
     assert topics._terms_to_label([]) == "Topic"
 
 

@@ -33,21 +33,77 @@ def _normalize(v: np.ndarray) -> np.ndarray:
     return v / n if n else v
 
 
+# Tokens that should render uppercase rather than Title Case.
+_ACRONYMS = {
+    "api", "ai", "llm", "ui", "ux", "seo", "css", "html", "sql", "rest",
+    "oauth", "sdk", "crm", "saas", "faq", "ios", "kpi", "roi", "b2b", "b2c",
+    "url", "http", "https", "vs", "ci", "cd", "ml", "gpu", "cpu", "pdf", "csv",
+}
+# Filler words not worth keeping in a short label.
+_LABEL_STOP = {
+    "the", "and", "for", "with", "your", "you", "our", "their", "this", "that",
+    "from", "into", "are", "was", "how", "what", "why", "can", "will", "get",
+    "use", "using", "based", "guide", "part", "more", "new", "best",
+}
+
+
+def _lemma(w: str) -> str:
+    """Crude singular form so 'llm'/'llms' and 'team'/'teams' dedupe."""
+    w = w.lower()
+    return w[:-1] if w.endswith("s") and len(w) > 3 else w
+
+
+def _cap(word: str) -> str:
+    lw = word.lower()
+    if lw in _ACRONYMS:
+        return lw.upper()
+    if lw.endswith("s") and lw[:-1] in _ACRONYMS:  # pluralised acronym: LLMs, APIs
+        return lw[:-1].upper() + "s"
+    return word if not word.islower() else word[:1].upper() + word[1:]
+
+
 def _terms_to_label(terms: List[str], k: int = 3) -> str:
-    """Turn ranked c-TF-IDF terms into a short readable label."""
-    seen, picked = set(), []
-    for t in terms:
-        t = t.strip()
-        key = t.lower()
-        if not t or key in seen:
-            continue
-        seen.add(key)
-        picked.append(t)
-        if len(picked) >= k:
-            break
-    if not picked:
+    """Build a readable phrase from ranked c-TF-IDF terms.
+
+    Prefers the top multi-word phrase (e.g. 'health insurance'), then fills in
+    distinct extra words, deduping overlapping/plural words. Acronyms are
+    uppercased and the result is Title-Cased — no keyword-soup '·' joins.
+    e.g. ['vs','vs code','code','environment'] -> 'VS Code Environment'.
+    """
+    cleaned = [t.strip() for t in terms if t and t.strip()]
+    if not cleaned:
         return "Topic"
-    return " · ".join(w.title() if w.islower() else w for w in picked)
+
+    words: List[str] = []          # ordered, kept words (original case)
+    used = set()                   # lemmas already represented
+
+    def add_word(w: str) -> None:
+        lem = _lemma(w)
+        if lem in used or w.lower() in _LABEL_STOP or len(w) < 2:
+            return
+        used.add(lem)
+        words.append(w)
+
+    # 1) seed with the first informative multi-word term (most specific)
+    for t in cleaned:
+        parts = t.split()
+        if len(parts) >= 2 and any(p.lower() not in _LABEL_STOP for p in parts):
+            for p in parts:
+                add_word(p)
+            break
+
+    # 2) fill with remaining terms' words in importance order
+    for t in cleaned:
+        for p in t.split():
+            add_word(p)
+            if len(words) >= k:
+                break
+        if len(words) >= k:
+            break
+
+    if not words:
+        return "Topic"
+    return " ".join(_cap(w) for w in words[:k])
 
 
 def _load_chunks(run_id: int, cfg: Config):
