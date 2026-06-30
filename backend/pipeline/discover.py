@@ -9,6 +9,7 @@ Then filter to content pages and cap at max_pages_per_domain.
 from __future__ import annotations
 
 import re
+import threading
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -69,23 +70,39 @@ def _from_sitemaps(base: str) -> List[str]:
         return []
 
 
-def _from_focused_crawl(base: str, max_pages: int) -> List[str]:
-    try:
-        from trafilatura.spider import focused_crawler
-    except Exception:
-        return []
-    try:
-        # focused_crawler handles robots, the frontier and dedup itself.
-        to_visit, known = focused_crawler(
-            base,
-            max_seen_urls=max_pages,
-            max_known_urls=max_pages * 5,
-        )
-        seen = set(known or [])
-        seen.update(to_visit or [])
-        return list(seen)
-    except Exception:
-        return []
+def _from_focused_crawl(base: str, max_urls: int, timeout: float = 0.0) -> List[str]:
+    """Sitemap-less fallback. Runs in a daemon thread with a wall-clock timeout —
+    focused_crawler has no internal timeout and can hang on slow sites. On
+    timeout we return whatever it produced (often nothing), and the caller
+    proceeds with at least the homepage."""
+    result = {"urls": []}
+
+    def work():
+        try:
+            from trafilatura.spider import focused_crawler
+
+            # focused_crawler handles robots, the frontier and dedup itself.
+            to_visit, known = focused_crawler(
+                base, max_seen_urls=max_urls, max_known_urls=max_urls * 4
+            )
+            seen = set(known or [])
+            seen.update(to_visit or [])
+            result["urls"] = list(seen)
+        except Exception:
+            pass
+
+    if not timeout:
+        work()
+        return result["urls"]
+
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(timeout)
+    return result["urls"]  # empty if it timed out (thread is a daemon, dies with us)
+
+
+# Treat a non-positive cap as "all pages" (bounded by the crawl time budget).
+_UNLIMITED = 1_000_000
 
 
 def discover_urls(
@@ -93,14 +110,26 @@ def discover_urls(
     max_pages: Optional[int] = None,
     cfg: Config = config,
 ) -> List[str]:
-    """Return up to `max_pages` content URLs for a domain (sitemap first)."""
-    cap = max_pages if max_pages is not None else cfg.max_pages_per_domain
+    """Return content URLs for a domain (sitemap first).
+
+    max_pages None -> config default; max_pages <= 0 -> all pages (the crawl
+    time budget is the real guardrail). The sitemap-less focused-crawl fallback
+    is always bounded by cfg.focused_crawl_max_urls.
+    """
+    if max_pages is None:
+        cap = cfg.max_pages_per_domain
+    elif max_pages <= 0:
+        cap = _UNLIMITED
+    else:
+        cap = max_pages
     base = normalize_base(domain)
     base_host = registrable_host(base)
 
     candidates = _from_sitemaps(base)
     if not candidates:
-        candidates = _from_focused_crawl(base, cap)
+        candidates = _from_focused_crawl(
+            base, cfg.focused_crawl_max_urls, cfg.focused_crawl_timeout_seconds
+        )
 
     # Filter, dedupe (stable order), and cap.
     seen = set()

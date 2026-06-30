@@ -86,6 +86,22 @@ class Config:
     respect_robots: bool = field(
         default_factory=lambda: _env_bool("TC_RESPECT_ROBOTS", True)
     )
+    # Per-domain wall-clock budget for crawling. Once exceeded, remaining URLs
+    # are skipped so one slow/huge site can't stall a run. 0 = no time limit.
+    crawl_time_budget_seconds: float = field(
+        default_factory=lambda: _env_float("TC_CRAWL_TIME_BUDGET", 180.0)
+    )
+    # Hard cap on the sitemap-less focused-crawl fallback (live crawling is
+    # slow). Sites WITH a sitemap aren't affected by this.
+    focused_crawl_max_urls: int = field(
+        default_factory=lambda: _env_int("TC_FOCUSED_CRAWL_MAX_URLS", 80)
+    )
+    # Wall-clock limit on the focused-crawl fallback itself (it has no internal
+    # timeout and can hang on slow sites). On timeout we proceed with whatever
+    # URLs we have (at least the homepage). 0 = no limit.
+    focused_crawl_timeout_seconds: float = field(
+        default_factory=lambda: _env_float("TC_FOCUSED_CRAWL_TIMEOUT", 45.0)
+    )
 
     # --- chunking / embeddings (SPEC §6.4) ---
     chunk_min_tokens: int = field(

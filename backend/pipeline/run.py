@@ -105,27 +105,36 @@ def crawl_domain(
     max_pages: Optional[int] = None,
     cfg: Config = config,
 ) -> int:
-    """Discover → fetch → extract → store pages for one domain. Returns count."""
-    urls = discover_urls(domain, max_pages=max_pages, cfg=cfg)
-    results = fetch_all(urls, cfg=cfg)
+    """Discover → fetch → extract → store pages for one domain. Returns count.
 
-    pages = []
-    for res in results:
+    Pages are stored incrementally as each fetch completes, so per-domain page
+    counts update live during the crawl. Crawling stops at the time budget.
+    """
+    urls = discover_urls(domain, max_pages=max_pages, cfg=cfg)
+    budget = cfg.crawl_time_budget_seconds or None
+
+    conn = get_connection(cfg.db_path)
+    stored = {"n": 0}
+
+    def handle(res):
         if not res.html:
-            continue
+            return
         page = extract_page(res.html, res.url, market_language=market_language)
         if page is None:
-            continue
-        pages.append(
-            {
-                "url": page.url,
-                "title": page.title,
-                "text": page.text,
-                "lang": page.lang,
-                "etag": res.etag,
-            }
+            return
+        conn.execute(
+            "INSERT INTO pages (domain_id, url, title, text, lang, etag) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (domain_id, page.url, page.title, page.text, page.lang, res.etag),
         )
-    return _store_pages(domain_id, pages, cfg)
+        conn.commit()
+        stored["n"] += 1
+
+    try:
+        fetch_all(urls, cfg=cfg, deadline_seconds=budget, on_result=handle)
+    finally:
+        conn.close()
+    return stored["n"]
 
 
 def get_run(run_id: int, cfg: Config = config):

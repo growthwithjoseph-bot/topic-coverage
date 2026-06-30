@@ -114,13 +114,26 @@ async def fetch_many(
     urls: List[str],
     cfg: Config = config,
     allow_render: bool = True,
+    deadline_seconds: Optional[float] = None,
+    on_result=None,
 ) -> List[FetchResult]:
-    """Fetch many URLs with a per-host concurrency cap and polite backoff."""
+    """Fetch many URLs with a per-host concurrency cap and polite backoff.
+
+    Stops starting new fetches once `deadline_seconds` of wall-clock have
+    elapsed (the time budget), so a slow/huge site can't stall the run. If
+    `on_result` is given it's called with each FetchResult as it completes —
+    used to store pages incrementally for live per-domain progress.
+    """
     robots = RobotsCache(cfg.user_agent, cfg.respect_robots)
     sem = asyncio.Semaphore(max(1, cfg.per_host_concurrency))
     headers = {"User-Agent": cfg.user_agent}
     limits = httpx.Limits(max_connections=cfg.per_host_concurrency)
     results: List[FetchResult] = []
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+
+    def expired() -> bool:
+        return bool(deadline_seconds) and (loop.time() - start) > deadline_seconds
 
     async with httpx.AsyncClient(
         headers=headers,
@@ -132,14 +145,35 @@ async def fetch_many(
 
         async def worker(u: str) -> FetchResult:
             async with sem:
+                if expired():  # budget spent -> skip remaining URLs
+                    return FetchResult(url=u, status=997, html=None, etag=None)
                 res = await fetch_url(client, u, robots, allow_render)
                 await asyncio.sleep(0.2)  # gentle inter-request delay per slot
                 return res
 
-        results = await asyncio.gather(*(worker(u) for u in urls))
-    return list(results)
+        tasks = [asyncio.create_task(worker(u)) for u in urls]
+        for fut in asyncio.as_completed(tasks):
+            res = await fut
+            results.append(res)
+            if on_result is not None:
+                on_result(res)
+    return results
 
 
-def fetch_all(urls: List[str], cfg: Config = config, allow_render: bool = True):
+def fetch_all(
+    urls: List[str],
+    cfg: Config = config,
+    allow_render: bool = True,
+    deadline_seconds: Optional[float] = None,
+    on_result=None,
+):
     """Sync wrapper around fetch_many for CLI/synchronous run contexts."""
-    return asyncio.run(fetch_many(urls, cfg=cfg, allow_render=allow_render))
+    return asyncio.run(
+        fetch_many(
+            urls,
+            cfg=cfg,
+            allow_render=allow_render,
+            deadline_seconds=deadline_seconds,
+            on_result=on_result,
+        )
+    )

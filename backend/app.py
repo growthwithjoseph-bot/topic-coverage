@@ -24,7 +24,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import config
-from .db import build_map, build_topic_detail, get_connection, init_db, run_counts
+from .db import (
+    build_map,
+    build_topic_detail,
+    domain_page_counts,
+    get_connection,
+    init_db,
+    run_counts,
+)
 from .pipeline.run import create_run, execute_run
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -78,7 +85,9 @@ def health():
 @app.post("/runs")
 def start_run(req: RunRequest):
     lang = req.market_language or config.default_market_language
-    cap = req.max_pages_per_domain or config.max_pages_per_domain
+    # None -> config default; 0 (or negative) -> all pages (bounded by the
+    # per-domain crawl time budget); a positive value -> that cap.
+    cap = config.max_pages_per_domain if req.max_pages_per_domain is None else req.max_pages_per_domain
     run_id = create_run(req.own_domain, req.competitor_domains, lang, cap)
     _run_in_background(run_id)
     return {"run_id": run_id, "status": "running"}
@@ -92,6 +101,7 @@ def run_status(run_id: int):
         if run is None:
             raise HTTPException(404, "run not found")
         counts = run_counts(conn, run_id)
+        domains = domain_page_counts(conn, run_id)
     finally:
         conn.close()
     return {
@@ -101,6 +111,7 @@ def run_status(run_id: int):
         "created_at": run["created_at"],
         "finished_at": run["finished_at"],
         "counts": counts,
+        "domains": domains,
     }
 
 

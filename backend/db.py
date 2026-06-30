@@ -193,6 +193,22 @@ def run_counts(conn: sqlite3.Connection, run_id: int) -> dict:
     }
 
 
+def domain_page_counts(conn: sqlite3.Connection, run_id: int) -> list:
+    """Per-domain pages-stored-so-far, own domain first (for live progress)."""
+    rows = conn.execute(
+        """SELECT d.domain, d.is_own, COUNT(p.id) AS pages
+           FROM domains d LEFT JOIN pages p ON p.domain_id = d.id
+           WHERE d.run_id = ?
+           GROUP BY d.id
+           ORDER BY d.is_own DESC, d.id""",
+        (run_id,),
+    ).fetchall()
+    return [
+        {"domain": r["domain"], "is_own": bool(r["is_own"]), "pages": r["pages"]}
+        for r in rows
+    ]
+
+
 def build_map(run_id: int, db_path: Optional[Path] = None) -> Optional[dict]:
     """Assemble the category→topic tree with states + shares (SPEC §8 /map)."""
     conn = get_connection(db_path)

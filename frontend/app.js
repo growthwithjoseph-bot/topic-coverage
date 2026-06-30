@@ -12,7 +12,6 @@ const STATE_LABEL = {
 const mapEl = document.getElementById('map');
 const detailEl = document.getElementById('detail');
 const statusEl = document.getElementById('status');
-const runInput = document.getElementById('runId');
 const progressEl = document.getElementById('progress');
 const analyzeBtn = document.getElementById('analyzeBtn');
 
@@ -65,7 +64,6 @@ async function startAnalysis(ownDomain, competitors, maxPages) {
     if (!res.ok) throw new Error(`start failed (${res.status})`);
     const { run_id } = await res.json();
     currentRunId = run_id;
-    runInput.value = run_id;
     history.replaceState(null, '', `?run=${run_id}`);
     pollRun(run_id);
   } catch (err) {
@@ -75,7 +73,7 @@ async function startAnalysis(ownDomain, competitors, maxPages) {
   }
 }
 
-function renderProgress(status, counts, errored) {
+function renderProgress(status, counts, domains, errored) {
   const idx = stageIndex(status);
   const pct = errored ? 100 : Math.round((idx / (STAGES.length - 1)) * 100);
   progressEl.hidden = false;
@@ -85,11 +83,15 @@ function renderProgress(status, counts, errored) {
     return `<span class="${cls}">${s.label}</span>`;
   }).join('');
   const c = counts || {};
+  const dchips = (domains || []).map(d =>
+    `<span class="dchip ${d.is_own ? 'own' : ''}">${esc(d.domain)} <b>${d.pages}</b> pages</span>`
+  ).join('');
   progressEl.innerHTML = `
     <div class="bar"><span style="width:${pct}%"></span></div>
     <div class="steps">${steps}</div>
     <div class="counts">${errored ? '⚠ run failed — check the server logs'
-      : `${c.domains || 0} domains · ${c.pages || 0} pages · ${c.chunks || 0} chunks · ${c.topics || 0} topics`}</div>`;
+      : `${c.pages || 0} pages · ${c.chunks || 0} chunks · ${c.topics || 0} topics`}</div>
+    <div class="domains">${dchips}</div>`;
 }
 
 async function pollRun(runId) {
@@ -100,11 +102,11 @@ async function pollRun(runId) {
     if (!r.ok) throw new Error(`run ${r.status}`);
     const info = await r.json();
     if (info.status === 'error') {
-      renderProgress(info.status, info.counts, true);
+      renderProgress(info.status, info.counts, info.domains, true);
       analyzeBtn.disabled = false;
       return;
     }
-    renderProgress(info.status, info.counts, false);
+    renderProgress(info.status, info.counts, info.domains, false);
     if (info.status === 'done') {
       analyzeBtn.disabled = false;
       await loadMap(runId);
@@ -250,20 +252,15 @@ document.getElementById('analyzeForm').addEventListener('submit', (e) => {
   if (!own) return;
   const comps = document.getElementById('compDomains').value
     .split(',').map(s => s.trim()).filter(Boolean);
-  const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 40;
+  // Blank -> 0 means "all pages" (bounded server-side by the crawl time budget).
+  const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 0;
   startAnalysis(own, comps, maxPages);
-});
-
-document.getElementById('loadBtn').addEventListener('click', () => {
-  const id = parseInt(runInput.value, 10);
-  if (id) loadMap(id);
 });
 
 // Deep-link: ?run=N loads (or resumes polling for) that run. Otherwise wait
 // for the user to enter a domain and click Analyze.
 const qsRun = new URLSearchParams(location.search).get('run');
 if (qsRun) {
-  runInput.value = qsRun;
   resumeOrLoad(parseInt(qsRun, 10));
 } else {
   mapEl.innerHTML = '<div class="muted">Enter your domain and competitors above, then click Analyze.</div>';

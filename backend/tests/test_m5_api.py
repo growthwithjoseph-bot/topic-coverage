@@ -90,3 +90,28 @@ def test_map_and_topic_detail():
 
 def test_missing_run_404():
     assert client.get("/runs/999999/map").status_code == 404
+
+
+def test_status_includes_per_domain_page_counts():
+    run_id, _ = _seed_run()
+    info = client.get(f"/runs/{run_id}").json()
+    doms = {d["domain"]: d for d in info["domains"]}
+    assert doms["you.com"]["is_own"] is True
+    assert doms["you.com"]["pages"] == 1 and doms["rival.com"]["pages"] == 1
+    # own domain is listed first
+    assert info["domains"][0]["is_own"] is True
+
+
+def test_post_runs_zero_means_all_pages(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(app_module, "_run_in_background", lambda rid: captured.update(rid=rid))
+    resp = client.post("/runs", json={"own_domain": "you.com", "max_pages_per_domain": 0})
+    assert resp.status_code == 200
+    conn = get_connection(config.db_path)
+    try:
+        cap = conn.execute(
+            "SELECT max_pages FROM runs WHERE id=?", (resp.json()["run_id"],)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert cap == 0  # 0 is preserved -> discovery treats it as "all pages"
