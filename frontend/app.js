@@ -219,9 +219,18 @@ function renderDetail(d, sampleMode) {
 function evidence(e, terms, showDomain) {
   return `<div class="ev">
     ${showDomain && e.domain ? `<div class="ev-domain">${esc(e.domain)}</div>` : ''}
+    ${e.title ? `<div class="ev-title">${esc(e.title)}</div>` : ''}
     <p>${highlight(e.sentence || '', terms)}</p>
-    ${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">See more →</a>` : ''}
+    ${e.url ? `<a class="ev-url" href="${esc(e.url)}" target="_blank" rel="noopener"
+      title="${esc(e.url)}">${esc(prettyUrl(e.url))}</a>
+      <a class="ev-more" href="${esc(e.url)}" target="_blank" rel="noopener">See more →</a>` : ''}
   </div>`;
+}
+
+// A compact, readable form of a URL (drop scheme + www, trim length).
+function prettyUrl(url) {
+  let u = String(url).replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+  return u.length > 60 ? u.slice(0, 57) + '…' : u;
 }
 
 // --- term highlighting ------------------------------------------------------
