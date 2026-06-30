@@ -19,8 +19,27 @@ curl -X POST localhost:8000/runs \
   -d '{"own_domain":"asana.com","competitor_domains":["monday.com","clickup.com","notion.so"]}'
 
 # 4. open the UI
-open frontend/index.html   # shows the radial coverage map for the latest run
+open http://localhost:8000/?run=1   # radial coverage map, served by the API
 ```
+
+The pipeline needs the ML stack for embeddings + topic discovery:
+
+```bash
+make install        # core deps (crawl + extract + API)
+make install-ml     # sentence-transformers + BERTopic stack (M2–M3)
+```
+
+### Try it offline (no crawl, no keys)
+
+```bash
+python -m backend.pipeline.demo   # seeds a reproducible 4-domain run
+make dev                          # then open http://localhost:8000/?run=1
+```
+
+The demo seeds crawled-equivalent content for one own domain + three
+competitors; topics are still **discovered by clustering** that content (not
+hardcoded), so it exercises the full embed → topics → coverage → map path
+without hitting the network.
 
 ## How it works (one line)
 crawl → extract clean content → chunk + embed → cluster into topics (across all domains) → score each domain's coverage per topic → render the radial map.
