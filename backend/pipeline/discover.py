@@ -73,16 +73,36 @@ def is_content_url(url: str, base_host: str, exclude_re: Optional["re.Pattern"] 
     return True
 
 
-def _from_sitemaps(base: str) -> List[str]:
-    try:
+def _run_with_timeout(fn, timeout: float):
+    """Run fn() in a daemon thread; return its result, or None if it exceeds
+    `timeout` (the thread is abandoned — it dies with the process). Neither
+    sitemap expansion nor focused crawling has an internal timeout, so this is
+    how we stop a huge/slow site (e.g. notion.com's giant sitemap) stalling a run."""
+    box = {"result": None}
+
+    def work():
+        try:
+            box["result"] = fn()
+        except Exception:
+            box["result"] = None
+
+    if not timeout:
+        work()
+        return box["result"]
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(timeout)
+    return box["result"]
+
+
+def _from_sitemaps(base: str, timeout: float = 0.0) -> List[str]:
+    def work():
         from trafilatura.sitemaps import sitemap_search
-    except Exception:
-        return []
-    try:
-        urls = sitemap_search(base, target_lang=None)
-        return list(urls or [])
-    except Exception:
-        return []
+
+        return list(sitemap_search(base, target_lang=None) or [])
+
+    urls = _run_with_timeout(work, timeout)
+    return urls or []
 
 
 def _from_focused_crawl(base: str, max_urls: int, timeout: float = 0.0) -> List[str]:
@@ -141,7 +161,7 @@ def discover_urls(
     base_host = registrable_host(base)
     exclude_re = build_exclude_regex(cfg.exclude_url_patterns)
 
-    candidates = _from_sitemaps(base)
+    candidates = _from_sitemaps(base, cfg.sitemap_timeout_seconds)
     if not candidates:
         candidates = _from_focused_crawl(
             base, cfg.focused_crawl_max_urls, cfg.focused_crawl_timeout_seconds

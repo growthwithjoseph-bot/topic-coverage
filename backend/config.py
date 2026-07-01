@@ -131,6 +131,12 @@ class Config:
     focused_crawl_timeout_seconds: float = field(
         default_factory=lambda: _env_float("TC_FOCUSED_CRAWL_TIMEOUT", 45.0)
     )
+    # Wall-clock limit on reading/expanding sitemaps (huge sitemap trees, e.g.
+    # notion.com, can take very long). On timeout we fall back to a focused
+    # crawl, then the homepage. 0 = no limit.
+    sitemap_timeout_seconds: float = field(
+        default_factory=lambda: _env_float("TC_SITEMAP_TIMEOUT", 30.0)
+    )
 
     # --- chunking / embeddings (SPEC §6.4) ---
     chunk_min_tokens: int = field(
