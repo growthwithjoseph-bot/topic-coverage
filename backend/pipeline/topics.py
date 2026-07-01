@@ -142,11 +142,20 @@ def _llm_enabled(cfg: Config) -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY") or cfg.anthropic_api_key)
 
 
+def _clean_llm_label(label: str) -> str:
+    """Tidy a model-produced label: strip quotes, split camelCase (models
+    sometimes drop spaces, e.g. 'TaskManagement'), collapse whitespace."""
+    label = label.strip().strip("\"'").strip()
+    label = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", label)  # TaskManagement -> Task Management
+    label = re.sub(r"\s+", " ", label).strip()
+    return label
+
+
 def _parse_label_json(text: str) -> Dict[int, str]:
     data = json.loads(text)
     out: Dict[int, str] = {}
     for item in data.get("labels", []):
-        label = (item.get("label") or "").strip()
+        label = _clean_llm_label(item.get("label") or "")
         if label:
             out[int(item["index"])] = label
     return out
