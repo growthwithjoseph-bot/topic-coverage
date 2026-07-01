@@ -134,11 +134,33 @@ _LLM_LABEL_SCHEMA = {
 
 
 def _llm_enabled(cfg: Config) -> bool:
-    return bool(cfg.llm_labels) and bool(os.getenv("ANTHROPIC_API_KEY") or cfg.anthropic_api_key)
+    if not cfg.llm_labels:
+        return False
+    provider = (cfg.llm_provider or "anthropic").lower()
+    if provider == "ollama":
+        return True  # local model, no key required (fails soft if not running)
+    return bool(os.getenv("ANTHROPIC_API_KEY") or cfg.anthropic_api_key)
+
+
+def _parse_label_json(text: str) -> Dict[int, str]:
+    data = json.loads(text)
+    out: Dict[int, str] = {}
+    for item in data.get("labels", []):
+        label = (item.get("label") or "").strip()
+        if label:
+            out[int(item["index"])] = label
+    return out
 
 
 def _llm_labels(prompt: str, cfg: Config) -> Dict[int, str]:
     """One structured-output call -> {index: label}. {} on any failure."""
+    provider = (cfg.llm_provider or "anthropic").lower()
+    if provider == "ollama":
+        return _llm_labels_ollama(prompt, cfg)
+    return _llm_labels_anthropic(prompt, cfg)
+
+
+def _llm_labels_anthropic(prompt: str, cfg: Config) -> Dict[int, str]:
     try:
         import anthropic
 
@@ -150,13 +172,33 @@ def _llm_labels(prompt: str, cfg: Config) -> Dict[int, str]:
             messages=[{"role": "user", "content": prompt}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "")
-        data = json.loads(text)
-        out: Dict[int, str] = {}
-        for item in data.get("labels", []):
-            label = (item.get("label") or "").strip()
-            if label:
-                out[int(item["index"])] = label
-        return out
+        return _parse_label_json(text)
+    except Exception:
+        return {}
+
+
+def _llm_labels_ollama(prompt: str, cfg: Config) -> Dict[int, str]:
+    """Local labelling via Ollama's HTTP API (free, no key). Uses structured
+    output (`format` schema) so the model returns valid JSON."""
+    try:
+        import httpx
+
+        # Guard against an Anthropic model id being left in TC_LLM_MODEL.
+        model = cfg.llm_model
+        if not model or model.startswith("claude"):
+            model = "qwen2.5:3b"
+        url = cfg.ollama_host.rstrip("/") + "/api/chat"
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "format": _LLM_LABEL_SCHEMA,  # Ollama structured outputs (>=0.5)
+            "options": {"temperature": 0},
+        }
+        resp = httpx.post(url, json=body, timeout=120.0)
+        resp.raise_for_status()
+        content = resp.json().get("message", {}).get("content", "")
+        return _parse_label_json(content)
     except Exception:
         return {}
 

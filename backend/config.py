@@ -181,13 +181,21 @@ class Config:
         default_factory=lambda: _env_str("ANTHROPIC_API_KEY", "")
     )
     # LLM topic/category labels (optional). Off by default so the repo runs with
-    # no keys; when on AND a key is present, topics.py names clusters with a
-    # model instead of term-based labels. Model is overridable.
+    # no keys; when on, topics.py names clusters with a model instead of
+    # term-based labels. Provider is switchable:
+    #   anthropic -> Claude (needs ANTHROPIC_API_KEY)
+    #   ollama    -> local open model (free, no key; needs Ollama running)
     llm_labels: bool = field(
         default_factory=lambda: _env_bool("TC_LLM_LABELS", False)
     )
+    llm_provider: str = field(
+        default_factory=lambda: _env_str("TC_LLM_PROVIDER", "anthropic")
+    )
     llm_model: str = field(
         default_factory=lambda: _env_str("TC_LLM_MODEL", "claude-opus-4-8")
+    )
+    ollama_host: str = field(
+        default_factory=lambda: _env_str("TC_OLLAMA_HOST", "http://localhost:11434")
     )
 
     # --- language ---

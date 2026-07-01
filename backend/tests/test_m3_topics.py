@@ -22,28 +22,34 @@ def test_terms_to_label_normalises_readably():
     assert topics._terms_to_label([]) == "Topic"
 
 
-def test_llm_disabled_without_flag_or_key(monkeypatch):
+def _cfg(**kw):
+    """Config with anthropic_api_key forced empty, ignoring any ambient .env."""
     from backend.config import Config
 
-    # flag off -> disabled regardless of key
+    c = Config(**kw)
+    object.__setattr__(c, "anthropic_api_key", "")
+    return c
+
+
+def test_llm_enabled_gating(monkeypatch):
+    # flag off -> disabled regardless of key/provider
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    assert topics._llm_enabled(Config(llm_labels=False)) is False
-    # flag on but no key -> disabled (repo stays key-free by default)
+    assert topics._llm_enabled(_cfg(llm_labels=False, llm_provider="anthropic")) is False
+    # anthropic provider, flag on but no key -> disabled (repo stays key-free)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    cfg = Config(llm_labels=True)
-    object.__setattr__(cfg, "anthropic_api_key", "")
-    assert topics._llm_enabled(cfg) is False
-    # flag on AND key present -> enabled
+    assert topics._llm_enabled(_cfg(llm_labels=True, llm_provider="anthropic")) is False
+    # anthropic provider, flag on AND key present -> enabled
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    assert topics._llm_enabled(Config(llm_labels=True)) is True
+    assert topics._llm_enabled(_cfg(llm_labels=True, llm_provider="anthropic")) is True
+    # ollama provider -> enabled with no key at all
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert topics._llm_enabled(_cfg(llm_labels=True, llm_provider="ollama")) is True
 
 
 def test_llm_labels_failure_returns_empty(monkeypatch):
     # any error in the call path (no key, SDK missing, network) degrades to {}
-    from backend.config import Config
-
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert topics._llm_labels("prompt", Config()) == {}
+    assert topics._llm_labels("prompt", _cfg(llm_labels=True, llm_provider="anthropic")) == {}
 
 
 def test_category_count_respects_band():
