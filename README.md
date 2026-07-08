@@ -1,6 +1,18 @@
+---
+title: Topic Coverage
+emoji: 🕸️
+colorFrom: green
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Topic Coverage
 
 Crawl a brand's site and its competitors', discover the topics each writes about, and see — as a radial map — **who covers what, and who covers it more**. A pure content-coverage comparison (no demand, no authority).
+
+> The block above is Hugging Face Spaces metadata (ignored by GitHub). Deploy: push this repo to a **Docker** Space; it serves the app on port 7860.
 
 See **`SPEC.md`** for the full build specification and **`CLAUDE.md`** for working conventions.
 
