@@ -30,6 +30,7 @@ from .db import (
     domain_page_counts,
     get_connection,
     init_db,
+    list_pages,
     run_counts,
 )
 from .pipeline.run import create_run, execute_run
@@ -129,6 +130,19 @@ def topic_detail(run_id: int, topic_id: int):
     if data is None:
         raise HTTPException(404, "topic not found")
     return data
+
+
+@app.get("/runs/{run_id}/pages")
+def run_pages(run_id: int):
+    """Every scraped page for the run, grouped by domain (for the page list)."""
+    conn = get_connection()
+    try:
+        exists = conn.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone()
+    finally:
+        conn.close()
+    if not exists:
+        raise HTTPException(404, "run not found")
+    return {"run_id": run_id, "domains": list_pages(run_id)}
 
 
 # --- static frontend (M6) ---------------------------------------------------

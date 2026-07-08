@@ -92,6 +92,17 @@ def test_missing_run_404():
     assert client.get("/runs/999999/map").status_code == 404
 
 
+def test_pages_endpoint_lists_scraped_pages():
+    run_id, _ = _seed_run()
+    resp = client.get(f"/runs/{run_id}/pages")
+    assert resp.status_code == 200
+    doms = {d["domain"]: d for d in resp.json()["domains"]}
+    assert doms["you.com"]["is_own"] is True
+    assert len(doms["you.com"]["pages"]) == 1
+    assert doms["you.com"]["pages"][0]["url"].startswith("http")
+    assert client.get("/runs/999999/pages").status_code == 404
+
+
 def test_status_includes_per_domain_page_counts():
     run_id, _ = _seed_run()
     info = client.get(f"/runs/{run_id}").json()

@@ -209,6 +209,31 @@ def domain_page_counts(conn: sqlite3.Connection, run_id: int) -> list:
     ]
 
 
+def list_pages(run_id: int, db_path: Optional[Path] = None) -> list:
+    """All scraped pages for a run, grouped by domain (own first)."""
+    conn = get_connection(db_path)
+    try:
+        doms = conn.execute(
+            "SELECT id, domain, is_own FROM domains WHERE run_id=? "
+            "ORDER BY is_own DESC, id",
+            (run_id,),
+        ).fetchall()
+        out = []
+        for d in doms:
+            pages = conn.execute(
+                "SELECT url, title FROM pages WHERE domain_id=? ORDER BY id",
+                (d["id"],),
+            ).fetchall()
+            out.append({
+                "domain": d["domain"],
+                "is_own": bool(d["is_own"]),
+                "pages": [{"url": p["url"], "title": p["title"]} for p in pages],
+            })
+        return out
+    finally:
+        conn.close()
+
+
 def build_map(run_id: int, db_path: Optional[Path] = None) -> Optional[dict]:
     """Assemble the category→topic tree with states + shares (SPEC §8 /map)."""
     conn = get_connection(db_path)

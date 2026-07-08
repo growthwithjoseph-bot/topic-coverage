@@ -157,20 +157,58 @@ async function loadMap(runId) {
   }
 }
 
-// Persistent "Pages analysed" bar under the header — own domain first, and a
-// red chip flags a competitor that returned 0 pages (usually a wrong domain).
+// Persistent "Pages analysed" bar under the header — own domain first, a red
+// chip flags a competitor that returned 0 pages (usually a wrong domain), plus
+// a button to open the full list of scraped pages.
 function renderPagesAnalysed(domainPages) {
   const el = document.getElementById('pagesAnalysed');
   if (!el) return;
   if (!domainPages || !domainPages.length) { el.hidden = true; el.innerHTML = ''; return; }
+  let total = 0;
   const chips = domainPages.map(d => {
+    total += d.pages || 0;
     const cls = d.is_own ? 'own' : (d.pages === 0 ? 'zero' : '');
     const role = d.is_own ? 'you' : 'competitor';
     return `<span class="dchip ${cls}">${esc(d.domain)} <b>${d.pages}</b> pages`
       + `<span style="opacity:.6"> · ${role}</span></span>`;
   }).join('');
-  el.innerHTML = `<span class="pa-label">Pages analysed:</span>${chips}`;
+  el.innerHTML = `<span class="pa-label">Pages analysed:</span>${chips}`
+    + `<button id="viewPagesBtn" class="view-pages" ${total ? '' : 'disabled'}>`
+    + `View all ${total} pages →</button>`;
   el.hidden = false;
+  const btn = document.getElementById('viewPagesBtn');
+  if (btn) btn.addEventListener('click', openPagesModal);
+}
+
+// --- "all scraped pages" modal ---------------------------------------------
+async function openPagesModal() {
+  const base = apiBase();
+  const modal = document.getElementById('pagesModal');
+  const body = document.getElementById('pagesModalBody');
+  if (!modal || !body || !base || currentRunId == null) return;
+  body.innerHTML = '<div class="muted">Loading pages…</div>';
+  modal.hidden = false;
+  try {
+    const data = await (await fetch(`${base}/runs/${currentRunId}/pages`)).json();
+    body.innerHTML = (data.domains || []).map(d => {
+      const items = (d.pages || []).map(pg =>
+        `<li><a href="${esc(pg.url)}" target="_blank" rel="noopener" title="${esc(pg.url)}">`
+        + `<span class="pg-title">${esc(pg.title || pg.url)}</span>`
+        + `<span class="pg-url">${esc(prettyUrl(pg.url))}</span></a></li>`
+      ).join('') || '<li class="muted">No pages scraped for this domain.</li>';
+      return `<section class="pg-group">`
+        + `<h4>${esc(d.domain)} <span class="pg-count">${(d.pages || []).length} pages`
+        + `${d.is_own ? ' · you' : ' · competitor'}</span></h4>`
+        + `<ul class="pg-list">${items}</ul></section>`;
+    }).join('') || '<div class="muted">No pages.</div>';
+  } catch (e) {
+    body.innerHTML = `<div class="muted">Could not load pages. ${esc(e.message)}</div>`;
+  }
+}
+
+function closePagesModal() {
+  const modal = document.getElementById('pagesModal');
+  if (modal) modal.hidden = true;
 }
 
 function indexTopics(map) {
@@ -282,6 +320,17 @@ document.getElementById('analyzeForm').addEventListener('submit', (e) => {
   // Blank -> 0 means "all pages" (bounded server-side by the crawl time budget).
   const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 0;
   startAnalysis(own, comps, maxPages);
+});
+
+// Close the "scraped pages" modal on backdrop click, the ✕, or Escape.
+const pagesModalEl = document.getElementById('pagesModal');
+if (pagesModalEl) {
+  pagesModalEl.addEventListener('click', (e) => {
+    if (e.target.hasAttribute('data-close')) closePagesModal();
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePagesModal();
 });
 
 // Deep-link: ?run=N loads (or resumes polling for) that run. Otherwise wait
