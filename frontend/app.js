@@ -319,6 +319,7 @@ document.getElementById('analyzeForm').addEventListener('submit', (e) => {
     .split(',').map(s => s.trim()).filter(Boolean);
   // Blank -> 0 means "all pages" (bounded server-side by the crawl time budget).
   const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 0;
+  if (window.trackRun) window.trackRun(own, comps);   // log submitted domains
   startAnalysis(own, comps, maxPages);
 });
 
