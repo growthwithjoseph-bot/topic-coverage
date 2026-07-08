@@ -16,42 +16,48 @@ Crawl a brand's site and its competitors', discover the topics each writes about
 
 See **`SPEC.md`** for the full build specification and **`CLAUDE.md`** for working conventions.
 
-## Quickstart (target state once built)
+## Run it on your own computer
 
+You need **Python 3.9+** and **git**. First install takes ~10 min (it downloads
+ML libraries); after that it starts in seconds. No API keys, no accounts.
+
+**macOS / Linux**
 ```bash
-# 1. install
-make install            # or: pip install -e .  &&  playwright install chromium
+git clone https://github.com/growthwithjoseph-bot/topic-coverage.git
+cd topic-coverage
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[ml]"
+# ⤷ Linux only: if that pulls a multi-GB CUDA torch, cancel and run this first, then re-run:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-# 2. run the API
-make dev                # FastAPI on http://localhost:8000
-
-# 3. start an analysis
-curl -X POST localhost:8000/runs \
-  -H 'content-type: application/json' \
-  -d '{"own_domain":"asana.com","competitor_domains":["monday.com","clickup.com","notion.so"]}'
-
-# 4. open the UI
-open http://localhost:8000/?run=1   # radial coverage map, served by the API
+python -m backend.pipeline.demo      # optional: seed a demo run to see it instantly
+uvicorn backend.app:app --port 8000
 ```
 
-The pipeline needs the ML stack for embeddings + topic discovery:
-
-```bash
-make install        # core deps (crawl + extract + API)
-make install-ml     # sentence-transformers + BERTopic stack (M2–M3)
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/growthwithjoseph-bot/topic-coverage.git
+cd topic-coverage
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[ml]"
+uvicorn backend.app:app --port 8000
 ```
 
-### Try it offline (no crawl, no keys)
+Then open **http://localhost:8000** → enter your domain + competitor domains
+(comma-separated), set **Max pages = 40** for a quick run, click **Analyze**.
+Or open **http://localhost:8000/?run=1** first to see the seeded demo instantly.
 
-```bash
-python -m backend.pipeline.demo   # seeds a reproducible 4-domain run
-make dev                          # then open http://localhost:8000/?run=1
+### Optional: nicer topic names (free, local)
+Labels default to keyword-based (readable, e.g. "Health Insurance Benefits").
+For plain-English names from a local model, install [Ollama](https://ollama.com),
+run `ollama pull qwen2.5:3b`, then create a `.env` file with:
 ```
-
-The demo seeds crawled-equivalent content for one own domain + three
-competitors; topics are still **discovered by clustering** that content (not
-hardcoded), so it exercises the full embed → topics → coverage → map path
-without hitting the network.
+TC_LLM_LABELS=true
+TC_LLM_PROVIDER=ollama
+TC_LLM_MODEL=qwen2.5:3b
+```
 
 ## How it works (one line)
 crawl → extract clean content → chunk + embed → cluster into topics (across all domains) → score each domain's coverage per topic → render the radial map.
